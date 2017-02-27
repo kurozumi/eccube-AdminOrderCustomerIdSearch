@@ -33,6 +33,7 @@
  */
 class AdminOrderCustomerIdSearch extends SC_Plugin_Base
 {
+
     /**
      * コンストラクタ
      *
@@ -42,18 +43,20 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     public function __construct(array $arrSelfInfo)
     {
         self::setupAutoloader();
-        
-        // プラグインを有効化したときの初期設定をココに追加する
-        if($arrSelfInfo["enable"] == 1) {}
 
+        // プラグインを有効化したときの初期設定をココに追加する
+        if ($arrSelfInfo["enable"] == 1) {
+            
+        }
     }
-    
+
     protected static $isAutoloaderRegistered = false;
-    
+
     /**
      * 独自ライブラリのパス設定
      */
-    public static function setupAutoloader() {
+    public static function setupAutoloader()
+    {
         if (!self::$isAutoloaderRegistered) {
             $path = dirname(__FILE__) . "/lib";
             ini_set('include_path', ini_get('include_path') . PATH_SEPARATOR . $path);
@@ -71,12 +74,11 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     public function install($arrPlugin, $objPluginInstaller = null)
     {
         self::setupAutoloader();
-        
+
         // htmlディレクトリにファイルを配置。
         $src_dir = PLUGIN_UPLOAD_REALDIR . "{$arrPlugin["plugin_code"]}/html/";
         $dest_dir = HTML_REALDIR;
         SC_Utils::copyDirectory($src_dir, $dest_dir);
-
     }
 
     /**
@@ -90,13 +92,11 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     public function uninstall($arrPlugin, $objPluginInstaller = null)
     {
         self::setupAutoloader();
-        
+
         // htmlディレクトリのファイルを削除。
         $target_dir = HTML_REALDIR;
         $source_dir = PLUGIN_UPLOAD_REALDIR . "{$arrPlugin["plugin_code"]}/html/";
         self::deleteDirectory($target_dir, $source_dir);
-
-
     }
 
     /**
@@ -110,7 +110,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     public function enable($arrPlugin, $objPluginInstaller = null)
     {
         self::setupAutoloader();
-        
+
         self::copyTemplate($arrPlugin);
     }
 
@@ -125,7 +125,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     public function disable($arrPlugin, $objPluginInstaller = null)
     {
         self::setupAutoloader();
-        
+
         // 無効時、プラグイン情報に値を初期化したい場合使う
         self::updatePlugin($arrPlugin["plugin_code"], array(
             "free_field1" => null,
@@ -133,7 +133,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
             "free_field3" => null,
             "free_field4" => null,
         ));
-        
+
         self::deleteTemplate($arrPlugin);
     }
 
@@ -146,11 +146,11 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     {
         $objHelperPlugin->addAction("loadClassFileChange", array(&$this, "loadClassFileChange"), $priority);
         $objHelperPlugin->addAction("prefilterTransform", array(&$this, "prefilterTransform"), $priority);
+        $objHelperPlugin->addAction("LC_Page_Admin_Order_action_before", array(&$this, "admin_order_action_before"), $priority);
         $objHelperPlugin->addAction("LC_Page_Admin_Order_action_after", array(&$this, "admin_order_action_after"), $priority);
-
     }
-    
-    public function admin_order_action_after(LC_Page $objPage)
+
+    public function admin_order_action_before(LC_Page $objPage)
     {
         $objFormParam = new SC_FormParam_Ex();
         $objPage->lfInitParam($objFormParam);
@@ -158,14 +158,10 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
         $objFormParam->setParam($_POST);
         $objPage->arrHidden = $objFormParam->getSearchArray();
         $objPage->arrForm = $objFormParam->getFormParamList();
-        
+
         switch ($objPage->getMode()) {
             // 検索パラメーター生成後に処理実行するため breakしない
             case 'csv':
-            case 'delete_all':
-                
-            // 検索パラメーターの生成
-            case 'search':
                 $objFormParam->convParam();
                 $objFormParam->trimParam();
                 $objPage->arrErr = $objPage->lfCheckError($objFormParam);
@@ -181,7 +177,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
                         $objPage->buildQuery($key, $where, $arrWhereVal, $objFormParam);
                         switch ($key) {
                             case 'search_order_customer_id':
-                                $where.= ' AND customer_id = ?';
+                                $where .= ' AND customer_id = ?';
                                 $arrWhereVal[] = sprintf('%d', $objFormParam->getValue($key));
                                 break;
                             default:
@@ -199,19 +195,57 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
                         case 'csv':
                             $objPage->doOutputCSV($where, $arrWhereVal, $order);
 
-                            SC_Response_Ex::actionExit();
+                            exit();
                             break;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
 
-                        // 全件削除(ADMIN_MODE)
-                        case 'delete_all':
-                            $page_max = 0;
-                            $arrResults = $objPage->findOrders($where, $arrWhereVal,
-                                                           $page_max, 0, $order);
-                            foreach ($arrResults as $element) {
-                                $objPurchase->cancelOrder($element['order_id'], ORDER_CANCEL, true);
-                            }
-                            break;
+    public function admin_order_action_after(LC_Page $objPage)
+    {
+        $objFormParam = new SC_FormParam_Ex();
+        $objPage->lfInitParam($objFormParam);
+        $objFormParam->addParam('会員ID', 'search_order_customer_id', STEXT_LEN, 'KVa', array('MAX_LENGTH_CHECK', 'NUM_CHECK'));
+        $objFormParam->setParam($_POST);
+        $objPage->arrHidden = $objFormParam->getSearchArray();
+        $objPage->arrForm = $objFormParam->getFormParamList();
 
+        switch ($objPage->getMode()) {
+            // 検索パラメーターの生成
+            case 'search':
+                $objFormParam->convParam();
+                $objFormParam->trimParam();
+                $objPage->arrErr = $objPage->lfCheckError($objFormParam);
+                $arrParam = $objFormParam->getHashArray();
+
+                if (count($objPage->arrErr) == 0) {
+                    $where = 'del_flg = 0';
+                    $arrWhereVal = array();
+                    foreach ($arrParam as $key => $val) {
+                        if ($val == '') {
+                            continue;
+                        }
+                        $objPage->buildQuery($key, $where, $arrWhereVal, $objFormParam);
+                        switch ($key) {
+                            case 'search_order_customer_id':
+                                $where .= ' AND customer_id = ?';
+                                $arrWhereVal[] = sprintf('%d', $objFormParam->getValue($key));
+                                break;
+                            default:
+                                break;
+                        }
+                    }
+
+                    $order = 'update_date DESC';
+
+                    /* -----------------------------------------------
+                     * 処理を実行
+                     * ----------------------------------------------- */
+                    switch ($objPage->getMode()) {
                         // 検索実行
                         default:
                             // 行数の取得
@@ -219,14 +253,11 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
                             // ページ送りの処理
                             $page_max = SC_Utils_Ex::sfGetSearchPageMax($objFormParam->getValue('search_page_max'));
                             // ページ送りの取得
-                            $objNavi = new SC_PageNavi_Ex($objPage->arrHidden['search_pageno'],
-                                                          $objPage->tpl_linemax, $page_max,
-                                                          'eccube.moveNaviPage', NAVI_PMAX);
+                            $objNavi = new SC_PageNavi_Ex($objPage->arrHidden['search_pageno'], $objPage->tpl_linemax, $page_max, 'eccube.moveNaviPage', NAVI_PMAX);
                             $objPage->arrPagenavi = $objNavi->arrPagenavi;
 
                             // 検索結果の取得
-                            $objPage->arrResults = $objPage->findOrders($where, $arrWhereVal,
-                                                                  $page_max, $objNavi->start_row, $order);
+                            $objPage->arrResults = $objPage->findOrders($where, $arrWhereVal, $page_max, $objNavi->start_row, $order);
                             break;
                     }
                 }
@@ -246,7 +277,6 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     {
         $base_path = PLUGIN_UPLOAD_REALDIR . basename(__DIR__) . "/data/class/";
         $helper_path = $base_path . "helper/";
-        
     }
 
     /**
@@ -260,7 +290,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
     public function prefilterTransform(&$source, LC_Page_Ex $objPage, $filename)
     {
         $objTransform = new SC_Helper_Transform($source);
-       
+
         switch ($objPage->arrPageLayout['device_type_id']) {
             case DEVICE_TYPE_PC:
                 break;
@@ -279,7 +309,6 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
                 break;
         }
         $source = $objTransform->getHTML();
-
     }
 
     /**
@@ -307,20 +336,20 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
                 break;
         }
         $source = $objTransform->getHTML();
-
     }
-    
+
     /**
      * プラグイン情報更新
      * 
      * @param string $plugin_code
      * @param array $free_fields
      */
-    public static function updatePlugin($plugin_code, array $free_fields){
+    public static function updatePlugin($plugin_code, array $free_fields)
+    {
         $objQuery = & SC_Query_Ex::getSingletonInstance();
         $objQuery->update("dtb_plugin", $free_fields, "plugin_code = ?", array($plugin_code));
     }
-    
+
     /**
      * 次に割り当てるMasterDataのIDを取得する
      * 
@@ -344,7 +373,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
         $objQuery = & SC_Query_Ex::getSingletonInstance();
         return $objQuery->max("rank", $mtb) + 1;
     }
-    
+
     /**
      * MasterDataに追加
      * 
@@ -352,23 +381,23 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
      * @param type $name
      * @return int
      */
-    public static function insertMasterDataId($mtb, $name, $id=null)
+    public static function insertMasterDataId($mtb, $name, $id = null)
     {
-        if(is_null($id))
+        if (is_null($id))
             $id = self::getNextMasterDataId($mtb);
 
         $objQuery = & SC_Query_Ex::getSingletonInstance();
         $objQuery->insert($mtb, array(
-            'id'   => $id,
+            'id' => $id,
             'name' => $name,
             'rank' => self::getNextMasterDataRank($mtb)));
 
         $masterData = new SC_DB_MasterData_Ex();
         $masterData->clearCache($mtb);
-        
+
         return $id;
     }
-    
+
     /**
      * MasterDataの指定IDを削除
      * 
@@ -383,9 +412,8 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
 
         $masterData = new SC_DB_MasterData_Ex();
         $masterData->clearCache($mtb);
-
     }
-    
+
     /**
      * 指定されたパスを比較して再帰的に削除します。
      * 
@@ -394,7 +422,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
      */
     public static function deleteDirectory($target_dir, $source_dir)
     {
-        if($dir = opendir($source_dir)) {
+        if ($dir = opendir($source_dir)) {
             while ($name = readdir($dir)) {
                 if ($name == '.' || $name == '..') {
                     continue;
@@ -417,7 +445,7 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
             closedir($dir);
         }
     }
-    
+
     /**
      * 本体にテンプレートをコピー
      * 
@@ -442,7 +470,6 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
         // モバイルテンプレートを配置。
         $dest_dir = SC_Helper_PageLayout_Ex::getTemplatePath(DEVICE_TYPE_MOBILE);
         SC_Utils::copyDirectory($src_dir . "mobile/", $dest_dir);
-
     }
 
     /**
@@ -469,7 +496,6 @@ class AdminOrderCustomerIdSearch extends SC_Plugin_Base
         // モバイルテンプレートを削除。
         $target_dir = SC_Helper_PageLayout_Ex::getTemplatePath(DEVICE_TYPE_MOBILE);
         self::deleteDirectory($target_dir, $src_dir . "mobile");
-
     }
 
 }
